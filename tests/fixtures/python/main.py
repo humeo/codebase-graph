@@ -2,7 +2,9 @@ from models import Order, Receipt
 from utils import validate_order, format_currency
 
 
-def process_payment(order: Order) -> Receipt:
+def process_payment(
+    order: Order,
+) -> Receipt:
     if not validate_order(order):
         raise ValueError("Invalid order")
     amount = order.total

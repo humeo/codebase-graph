@@ -30,6 +30,7 @@ def test_extracts_classes():
     class_names = {s.name for s in symbols if s.kind == "class"}
     assert "Order" in class_names
     assert "Receipt" in class_names
+    assert "ReceiptCollection" in class_names
 
 
 def test_extracts_methods():
@@ -55,14 +56,25 @@ def test_extracts_call_edges():
 
 
 def test_extracts_inherits_edges():
-    symbols, edges = _parse(FIXTURES / "models.py")
-    assert symbols
-    inherits = [e for e in edges if e.relation == "inherits"]
-    assert len(inherits) == 0
+    _, edges = _parse(FIXTURES / "models.py")
+    inherits = {
+        (edge.source_name, edge.target_name)
+        for edge in edges
+        if edge.relation == "inherits"
+    }
+    assert ("ReceiptCollection", "collections.UserList") in inherits
 
 
-def test_captures_signature():
+def test_captures_multiline_function_signature():
     symbols, _ = _parse(FIXTURES / "main.py")
     process = next(s for s in symbols if s.name == "process_payment")
+    assert "\n" in process.signature
     assert "order: Order" in process.signature
     assert "Receipt" in process.signature
+
+
+def test_captures_multiline_class_signature():
+    symbols, _ = _parse(FIXTURES / "models.py")
+    receipt_collection = next(s for s in symbols if s.name == "ReceiptCollection")
+    assert "\n" in receipt_collection.signature
+    assert "collections.UserList" in receipt_collection.signature

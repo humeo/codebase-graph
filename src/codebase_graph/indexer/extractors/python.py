@@ -82,11 +82,12 @@ class PythonExtractor:
         superclasses = node.child_by_field_name("superclasses")
         if superclasses is not None:
             for child in superclasses.children:
-                if child.type == "identifier":
+                target_name = self._resolve_reference_name(child)
+                if target_name is not None:
                     self._edges.append(
                         EdgeInfo(
                             source_name=name,
-                            target_name=self._text(child),
+                            target_name=target_name,
                             relation="inherits",
                             line=child.start_point[0] + 1,
                         )
@@ -169,10 +170,17 @@ class PythonExtractor:
         return None
 
     def _signature(self, node: Node) -> str | None:
-        signature = self._source[node.start_byte :].split(b"\n", maxsplit=1)[0].decode(
-            "utf-8"
-        )
-        return signature.removesuffix(":").strip()
+        body = node.child_by_field_name("body")
+        if body is None:
+            return None
+
+        signature = self._source[node.start_byte : body.start_byte].decode("utf-8")
+        return signature.rstrip().removesuffix(":").rstrip()
+
+    def _resolve_reference_name(self, node: Node) -> str | None:
+        if node.type in {"identifier", "attribute", "dotted_name"}:
+            return self._text(node)
+        return None
 
     @staticmethod
     def _text(node: Node) -> str:
