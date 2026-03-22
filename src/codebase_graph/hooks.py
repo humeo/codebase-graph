@@ -16,10 +16,10 @@ def _build_hook_snippet(cg_command: str) -> str:
     quoted_command = shlex.quote(cg_command)
     return f"""\
 {HOOK_START}
-changed_files=$(git diff-tree --no-commit-id --name-only -r HEAD)
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$changed_files" ] && [ -n "$repo_root" ]; then
-    {quoted_command} update --root "$repo_root" $changed_files 2>/dev/null || true
+if [ -n "$repo_root" ]; then
+    git diff-tree --root --no-commit-id --name-only -z -r HEAD | \\
+        xargs -0 {quoted_command} update --root "$repo_root" 2>/dev/null || true
 fi
 {HOOK_END}
 """

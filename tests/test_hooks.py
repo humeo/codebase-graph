@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 
 from codebase_graph.hooks import HOOK_MARKER, install_hook, uninstall_hook
@@ -30,6 +31,18 @@ def _commit_all(root: Path, message: str, env: dict[str, str] | None = None) -> 
         check=True,
         env=env,
     )
+
+
+def _indexed_paths(root: Path) -> set[str]:
+    db_path = root / ".codebase-graph" / "index.db"
+    if not db_path.exists():
+        return set()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        return {row[0] for row in conn.execute("SELECT path FROM files")}
+    finally:
+        conn.close()
 
 
 def test_install_hook_creates_post_commit_hook(tmp_path):
@@ -94,6 +107,34 @@ def test_installed_hook_updates_index_with_minimal_path(tmp_path):
     _commit_all(tmp_path, "update", env=env)
 
     assert (tmp_path / ".codebase-graph" / "index.db").exists()
+
+
+def test_installed_hook_indexes_initial_commit(tmp_path):
+    _init_repo(tmp_path)
+    source_file = tmp_path / "app.py"
+    source_file.write_text("print(1)\n", encoding="utf-8")
+
+    assert install_hook(tmp_path) is True
+
+    _commit_all(tmp_path, "init")
+
+    assert "app.py" in _indexed_paths(tmp_path)
+
+
+def test_installed_hook_updates_file_paths_with_spaces(tmp_path):
+    _init_repo(tmp_path)
+    source_file = tmp_path / "app.py"
+    source_file.write_text("print(1)\n", encoding="utf-8")
+    _commit_all(tmp_path, "init")
+
+    assert install_hook(tmp_path) is True
+
+    spaced_file = tmp_path / "dir" / "with space.py"
+    spaced_file.parent.mkdir()
+    spaced_file.write_text("def spaced():\n    return 1\n", encoding="utf-8")
+    _commit_all(tmp_path, "add spaced file")
+
+    assert "dir/with space.py" in _indexed_paths(tmp_path)
 
 
 def test_install_hook_does_not_modify_non_shell_hook(tmp_path):
