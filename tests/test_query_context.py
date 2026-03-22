@@ -169,6 +169,40 @@ def test_context_reports_ambiguous_bare_name_matches():
     }
 
 
+def test_context_prefers_function_over_method_for_bare_name_match():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+    file_id = upsert_file(conn, "mixed.py", "python", "hash-mixed")
+    insert_symbol(
+        conn,
+        name="shared",
+        qualified_name="shared",
+        kind="function",
+        file_id=file_id,
+        line_start=1,
+        line_end=2,
+        signature="def shared()",
+    )
+    insert_symbol(
+        conn,
+        name="shared",
+        qualified_name="Thing.shared",
+        kind="method",
+        file_id=file_id,
+        line_start=4,
+        line_end=5,
+        signature="def shared(self)",
+    )
+
+    result = query_context(conn, "shared")
+
+    assert result is not None
+    assert "ambiguous" not in result
+    assert result["symbol"]["kind"] == "function"
+    assert result["symbol"]["qualified_name"] == "shared"
+
+
 def test_format_context_text_renders_imports_section():
     conn = _indexed_db()
     result = query_context(conn, "process_payment")
