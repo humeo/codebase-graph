@@ -47,3 +47,19 @@ def test_get_imports():
     imports = get_imports(conn, syms[0]["id"])
     import_names = {item["name"] for item in imports}
     assert "Order" in import_names
+
+
+def test_get_reverse_deps_returns_importing_module_symbols():
+    conn = _indexed_db()
+    syms = find_symbol(conn, "Order")
+    reverse_deps = get_reverse_deps(conn, syms[0]["id"])
+
+    assert len(reverse_deps) > 0
+    importer_names = {item["name"] for item in reverse_deps}
+    importer_kinds = {item["kind"] for item in reverse_deps}
+    importer_files = {item["file_path"] for item in reverse_deps}
+
+    assert "main.py" in importer_names
+    assert "utils.py" in importer_names
+    assert importer_kinds == {"module"}
+    assert importer_files == {"main.py", "utils.py"}

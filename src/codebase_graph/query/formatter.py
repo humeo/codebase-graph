@@ -5,6 +5,15 @@ import json
 
 def format_context_text(result: dict) -> str:
     """Format context query result as human-readable text."""
+    if result.get("ambiguous"):
+        lines = [f"Ambiguous query: {result['query']}"]
+        for match in result.get("matches", []):
+            lines.append(
+                f"  {match['qualified_name']} ({match['kind']}) "
+                f"{match['file']}:{match['line_start']}-{match['line_end']}"
+            )
+        return "\n".join(lines)
+
     symbol = result["symbol"]
     lines = []
 
@@ -33,6 +42,17 @@ def format_context_text(result: dict) -> str:
                 else "unresolved"
             )
             lines.append(f"  {callee['name']:<25s} {loc}")
+
+    imports = result.get("imports", [])
+    if imports:
+        lines.append(f"\n── Imports ({len(imports)}) {'─' * 41}")
+        for imported in imports:
+            loc = (
+                f"{imported.get('file_path', '?')}:{imported.get('line', '?')}"
+                if imported.get("file_path")
+                else "unresolved"
+            )
+            lines.append(f"  {imported['name']:<25s} {loc}")
 
     key_files = result.get("key_files", [])
     if key_files:
