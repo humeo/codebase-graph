@@ -53,11 +53,11 @@ Understand what a function depends on. Useful for tracing data flow.
 
 ### `cg symbol <name> --json`
 
-Find where a symbol is defined. Supports fuzzy matching.
+Find where a symbol is defined by exact name or qualified name.
 
 ### `cg file <path> --json`
 
-List all symbols in a file and their relationships. Good starting point for understanding a module.
+List all indexed symbols in a file. Good starting point for understanding a module.
 
 ### `cg update <file1> [file2...]`
 
