@@ -6,6 +6,7 @@ from pathlib import Path
 
 import click
 
+from codebase_graph.hooks import install_hook, uninstall_hook
 from codebase_graph.indexer.engine import index_directory, index_file
 from codebase_graph.query.context import query_context
 from codebase_graph.query.formatter import format_context_text, format_json
@@ -88,6 +89,33 @@ def cli(verbose: bool) -> None:
     """cg - code navigation & context compression for agents."""
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
+
+
+@cli.group()
+def hook() -> None:
+    """Manage git hooks for automatic index updates."""
+
+
+@hook.command("install")
+@click.option("--root", default=None, help="Project root")
+def hook_install(root: str | None) -> None:
+    """Install post-commit hook to auto-update index."""
+    root_path = _resolve_root(root)
+    if install_hook(root_path):
+        click.echo("Installed post-commit hook.")
+    else:
+        click.echo("Hook already installed or .git not found.")
+
+
+@hook.command("uninstall")
+@click.option("--root", default=None, help="Project root")
+def hook_uninstall(root: str | None) -> None:
+    """Remove the post-commit hook."""
+    root_path = _resolve_root(root)
+    if uninstall_hook(root_path):
+        click.echo("Removed post-commit hook.")
+    else:
+        click.echo("Hook not found.")
 
 
 @cli.command()
