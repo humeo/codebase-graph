@@ -1,0 +1,88 @@
+"""CLI integration tests."""
+
+import json
+import shutil
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from codebase_graph.cli import cli
+
+FIXTURES = Path(__file__).parent / "fixtures" / "python"
+
+
+def _setup_project(tmp_path):
+    """Copy fixtures to a temp dir and index them."""
+    project = tmp_path / "project"
+    project.mkdir()
+    for fixture in FIXTURES.iterdir():
+        shutil.copy(fixture, project / fixture.name)
+    return project
+
+
+def test_cli_index(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["index", str(project)])
+
+    assert result.exit_code == 0
+    assert "Indexed" in result.output or "indexed" in result.output
+
+
+def test_cli_context(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["context", "process_payment", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "process_payment" in result.output
+
+
+def test_cli_context_json(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(
+        cli,
+        ["context", "process_payment", "--root", str(project), "--json"],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["symbol"]["name"] == "process_payment"
+
+
+def test_cli_symbol(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["symbol", "Order", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "Order" in result.output
+
+
+def test_cli_callers(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["callers", "validate_order", "--root", str(project)])
+
+    assert result.exit_code == 0
+
+
+def test_cli_stats(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["stats", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "files" in result.output.lower() or "symbols" in result.output.lower()
