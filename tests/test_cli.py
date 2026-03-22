@@ -16,7 +16,8 @@ def _setup_project(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     for fixture in FIXTURES.iterdir():
-        shutil.copy(fixture, project / fixture.name)
+        if fixture.is_file():
+            shutil.copy(fixture, project / fixture.name)
     return project
 
 
