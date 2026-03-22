@@ -121,14 +121,13 @@ def resolve_edges(conn: sqlite3.Connection) -> int:
                SELECT s.id
                FROM symbols s
                WHERE s.name = edges.target_name
-               LIMIT 1
            )
            WHERE target_id IS NULL
-             AND EXISTS (
-                 SELECT 1
+             AND (
+                 SELECT COUNT(*)
                  FROM symbols s
                  WHERE s.name = edges.target_name
-             )"""
+             ) = 1"""
     )
     conn.commit()
     return cursor.rowcount

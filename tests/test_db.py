@@ -147,3 +147,33 @@ def test_resolve_edges(db):
         "SELECT target_id FROM edges WHERE source_id = ?", (src_id,)
     ).fetchone()
     assert row["target_id"] == tgt_id
+
+
+def test_resolve_edges_leaves_ambiguous_duplicate_names_unresolved(db):
+    file_id = upsert_file(db, "src/main.py", "python", "abc123")
+    other_file_id = upsert_file(db, "src/lib.py", "python", "def456")
+    src_id = insert_symbol(
+        db, "caller", "main.caller", "function", file_id, 1, 5, "def caller()"
+    )
+    insert_symbol(
+        db, "callee", "main.callee", "function", file_id, 10, 20, "def callee()"
+    )
+    insert_symbol(
+        db, "callee", "lib.callee", "function", other_file_id, 1, 4, "def callee()"
+    )
+    insert_edge(
+        db,
+        source_id=src_id,
+        target_name="callee",
+        relation="calls",
+        file_id=file_id,
+        line=3,
+    )
+
+    resolved = resolve_edges(db)
+
+    assert resolved == 0
+    row = db.execute(
+        "SELECT target_id FROM edges WHERE source_id = ?", (src_id,)
+    ).fetchone()
+    assert row["target_id"] is None
