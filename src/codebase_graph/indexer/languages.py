@@ -1,11 +1,13 @@
 """Language registry for tree-sitter languages and extractors."""
 
+from typing import Any
+
 from tree_sitter import Language
 import tree_sitter_python as tspython
 
 from codebase_graph.indexer.extractors.python import PythonExtractor
 
-_REGISTRY: dict[str, tuple[Language, type[PythonExtractor]]] = {}
+_REGISTRY: dict[str, tuple[str, Language, type[Any]]] = {}
 
 
 def _init_registry() -> None:
@@ -13,7 +15,7 @@ def _init_registry() -> None:
     if _REGISTRY:
         return
     _REGISTRY = {
-        ".py": (Language(tspython.language()), PythonExtractor),
+        ".py": ("python", Language(tspython.language()), PythonExtractor),
     }
 
 
@@ -23,16 +25,25 @@ def get_language_and_extractor(suffix: str) -> tuple[Language | None, object | N
     entry = _REGISTRY.get(suffix)
     if entry is None:
         return None, None
-    language, extractor_cls = entry
+    _, language, extractor_cls = entry
     return language, extractor_cls()
 
 
 def register_language(
-    suffix: str, language: Language, extractor_cls: type[PythonExtractor]
+    suffix: str, language_name: str, language: Language, extractor_cls: type[Any]
 ) -> None:
     """Register a new language extractor."""
     _init_registry()
-    _REGISTRY[suffix] = (language, extractor_cls)
+    _REGISTRY[suffix] = (language_name, language, extractor_cls)
+
+
+def get_language_name(suffix: str) -> str | None:
+    """Return the registered language name for a file suffix."""
+    _init_registry()
+    entry = _REGISTRY.get(suffix)
+    if entry is None:
+        return None
+    return entry[0]
 
 
 def supported_suffixes() -> set[str]:
