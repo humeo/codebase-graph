@@ -130,3 +130,18 @@ def test_cli_context_ambiguous_symbol(tmp_path):
 
     assert result.exit_code == 1
     assert "Ambiguous query: __init__" in result.output
+
+
+def test_cli_hook_install_reports_incompatible_hook(tmp_path):
+    project = tmp_path / "project"
+    hooks_dir = project / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    hook_path = hooks_dir / "post-commit"
+    hook_path.write_text('#!/usr/bin/env python3\nprint("hi")\n', encoding="utf-8")
+    hook_path.chmod(0o755)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["hook", "install", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "non-shell hook" in result.output.lower()

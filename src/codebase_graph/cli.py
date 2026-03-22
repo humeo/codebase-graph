@@ -104,7 +104,10 @@ def hook_install(root: str | None) -> None:
     if install_hook(root_path):
         click.echo("Installed post-commit hook.")
     else:
-        click.echo("Hook already installed or .git not found.")
+        click.echo(
+            "Hook not installed. It may already be installed, .git may be missing, "
+            "or an existing non-shell hook was left unchanged."
+        )
 
 
 @hook.command("uninstall")

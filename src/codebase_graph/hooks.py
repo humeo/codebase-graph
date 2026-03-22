@@ -1,20 +1,55 @@
 """Git hook installation for automatic index updates."""
 
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
+import sys
 
 HOOK_MARKER = "# codebase-graph:"
 HOOK_START = f"{HOOK_MARKER} start"
 HOOK_END = f"{HOOK_MARKER} end"
-HOOK_SNIPPET = f"""\
+SHELL_INTERPRETERS = {"ash", "bash", "dash", "ksh", "sh", "zsh"}
+
+
+def _build_hook_snippet(cg_command: str) -> str:
+    quoted_command = shlex.quote(cg_command)
+    return f"""\
 {HOOK_START}
 changed_files=$(git diff-tree --no-commit-id --name-only -r HEAD)
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -n "$changed_files" ] && [ -n "$repo_root" ]; then
-    cg update --root "$repo_root" $changed_files 2>/dev/null || true
+    {quoted_command} update --root "$repo_root" $changed_files 2>/dev/null || true
 fi
 {HOOK_END}
 """
+
+
+def _resolve_cg_command() -> str | None:
+    executable_dir = Path(sys.executable).resolve().parent
+    candidates = [executable_dir / "cg"]
+    if sys.platform == "win32":
+        candidates.append(executable_dir / "cg.exe")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+
+    return shutil.which("cg")
+
+
+def _is_shell_hook(content: str) -> bool:
+    stripped = content.lstrip()
+    if not stripped:
+        return True
+
+    first_line = stripped.splitlines()[0].strip()
+    if not first_line.startswith("#!"):
+        return False
+
+    parts = [part for part in first_line[2:].strip().split() if not part.startswith("-")]
+    interpreters = {Path(part).name for part in parts}
+    return bool(interpreters & SHELL_INTERPRETERS)
 
 
 def _resolve_git_dir(root: Path) -> Path | None:
@@ -60,6 +95,10 @@ def install_hook(root: Path) -> bool:
     hooks_dir = _resolve_hooks_dir(root)
     if hooks_dir is None:
         return False
+    cg_command = _resolve_cg_command()
+    if cg_command is None:
+        return False
+    hook_snippet = _build_hook_snippet(cg_command)
 
     hooks_dir.mkdir(parents=True, exist_ok=True)
     hook_path = hooks_dir / "post-commit"
@@ -68,9 +107,11 @@ def install_hook(root: Path) -> bool:
         existing = hook_path.read_text(encoding="utf-8")
         if HOOK_START in existing:
             return False
-        updated = existing.rstrip() + "\n\n" + HOOK_SNIPPET
+        if not _is_shell_hook(existing):
+            return False
+        updated = existing.rstrip() + "\n\n" + hook_snippet
     else:
-        updated = "#!/bin/sh\n" + HOOK_SNIPPET
+        updated = "#!/bin/sh\n" + hook_snippet
 
     hook_path.write_text(updated, encoding="utf-8")
     hook_path.chmod(0o755)

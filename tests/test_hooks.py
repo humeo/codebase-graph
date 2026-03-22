@@ -1,12 +1,35 @@
 """Tests for git hook installation helpers."""
 
+import os
 from pathlib import Path
+import subprocess
 
 from codebase_graph.hooks import HOOK_MARKER, install_hook, uninstall_hook
 
 
 def _read_hook(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _init_repo(root: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "test@example.com"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.name", "Test User"],
+        check=True,
+    )
+
+
+def _commit_all(root: Path, message: str, env: dict[str, str] | None = None) -> None:
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", message],
+        check=True,
+        env=env,
+    )
 
 
 def test_install_hook_creates_post_commit_hook(tmp_path):
@@ -55,3 +78,32 @@ def test_install_hook_supports_worktree_git_file(tmp_path):
     assert installed is True
     assert hook_path.exists()
     assert HOOK_MARKER in _read_hook(hook_path)
+
+
+def test_installed_hook_updates_index_with_minimal_path(tmp_path):
+    _init_repo(tmp_path)
+    source_file = tmp_path / "app.py"
+    source_file.write_text("print(1)\n", encoding="utf-8")
+    _commit_all(tmp_path, "init")
+
+    assert install_hook(tmp_path) is True
+
+    source_file.write_text("print(2)\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["PATH"] = "/usr/bin:/bin"
+    _commit_all(tmp_path, "update", env=env)
+
+    assert (tmp_path / ".codebase-graph" / "index.db").exists()
+
+
+def test_install_hook_does_not_modify_non_shell_hook(tmp_path):
+    _init_repo(tmp_path)
+    hook_path = tmp_path / ".git" / "hooks" / "post-commit"
+    original = '#!/usr/bin/env python3\nprint("hi")\n'
+    hook_path.write_text(original, encoding="utf-8")
+    hook_path.chmod(0o755)
+
+    installed = install_hook(tmp_path)
+
+    assert installed is False
+    assert _read_hook(hook_path) == original
