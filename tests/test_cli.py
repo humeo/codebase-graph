@@ -77,6 +77,39 @@ def test_cli_callers(tmp_path):
     assert result.exit_code == 0
 
 
+def test_cli_callees(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["callees", "process_payment", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "validate_order" in result.output
+
+
+def test_cli_file(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["file", "models.py", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "Order" in result.output
+
+
+def test_cli_update(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["update", "main.py", "--root", str(project)])
+
+    assert result.exit_code == 0
+    assert "Updated" in result.output
+
+
 def test_cli_stats(tmp_path):
     project = _setup_project(tmp_path)
     runner = CliRunner()
@@ -86,3 +119,14 @@ def test_cli_stats(tmp_path):
 
     assert result.exit_code == 0
     assert "files" in result.output.lower() or "symbols" in result.output.lower()
+
+
+def test_cli_context_ambiguous_symbol(tmp_path):
+    project = _setup_project(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["index", str(project)])
+
+    result = runner.invoke(cli, ["context", "__init__", "--root", str(project)])
+
+    assert result.exit_code == 1
+    assert "Ambiguous query: __init__" in result.output
