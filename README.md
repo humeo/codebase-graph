@@ -48,12 +48,6 @@ Install the skill from this repository:
 npx skills add https://github.com/humeo/codebase-graph --skill codebase-graph
 ```
 
-Target a specific agent when needed. For example, Codex:
-
-```bash
-npx skills add https://github.com/humeo/codebase-graph --skill codebase-graph -a codex
-```
-
 Skill files live in:
 
 ```text
