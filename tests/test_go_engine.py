@@ -141,3 +141,26 @@ def test_index_directory_mixed_tree_allows_go_files_without_matching_context(tmp
         row["path"] for row in conn.execute("SELECT path FROM files ORDER BY path").fetchall()
     }
     assert file_paths == {"app/util.go", "main.go"}
+
+
+def test_index_directory_ignores_skipped_go_files_inside_module_context(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    (app_dir / "util.go").write_text("package app\n\nfunc Run() {}\n", encoding="utf-8")
+
+    ignored_file = app_dir / "node_modules" / "x" / "bad.go"
+    ignored_file.parent.mkdir(parents=True)
+    ignored_file.write_text("this is not valid go\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    stats = index_directory(conn, tmp_path)
+
+    assert stats["files_scanned"] == 1
+    file_paths = {
+        row["path"] for row in conn.execute("SELECT path FROM files ORDER BY path").fetchall()
+    }
+    assert file_paths == {"app/util.go"}

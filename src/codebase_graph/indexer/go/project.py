@@ -9,6 +9,23 @@ import re
 
 _MODULE_RE = re.compile(r"^module\s+(\S+)\s*$")
 _PACKAGE_RE = re.compile(r"^package\s+([A-Za-z_][A-Za-z0-9_]*)\s*$")
+_SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".codebase-graph",
+    ".next",
+    ".nuxt",
+}
 
 
 @dataclass(frozen=True)
@@ -42,7 +59,7 @@ def build_go_project_context(root: Path) -> GoProjectContext:
     package_files: dict[tuple[Path, str], list[Path]] = {}
     file_details: dict[Path, tuple[_Module, str, Path]] = {}
 
-    for file_path in sorted(root.rglob("*.go")):
+    for file_path in _iter_project_paths(root, "*.go"):
         resolved = file_path.resolve()
         module = _select_module(resolved, modules)
         package_name = _parse_package_name(resolved)
@@ -75,10 +92,20 @@ def build_go_project_context(root: Path) -> GoProjectContext:
 
 def _discover_modules(root: Path) -> list[_Module]:
     modules: list[_Module] = []
-    for mod_file in sorted(root.rglob("go.mod")):
+    for mod_file in _iter_project_paths(root, "go.mod"):
         module_root = mod_file.parent.resolve()
         modules.append(_Module(root=module_root, path=_parse_module_path(mod_file)))
     return modules
+
+
+def _iter_project_paths(root: Path, pattern: str) -> list[Path]:
+    paths: list[Path] = []
+    for path in sorted(root.rglob(pattern)):
+        relative_parts = path.relative_to(root).parts
+        if any(part in _SKIP_DIRS for part in relative_parts):
+            continue
+        paths.append(path)
+    return paths
 
 
 def _select_module(file_path: Path, modules: list[_Module]) -> _Module:
