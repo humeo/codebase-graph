@@ -42,6 +42,12 @@ def get_file_by_path(conn: sqlite3.Connection, path: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM files WHERE path = ?", (path,)).fetchone()
 
 
+def delete_file_by_path(conn: sqlite3.Connection, path: str) -> None:
+    """Delete a file record and its dependent symbols/edges by relative path."""
+    conn.execute("DELETE FROM files WHERE path = ?", (path,))
+    conn.commit()
+
+
 def delete_file_data(conn: sqlite3.Connection, file_id: int) -> None:
     """Delete all symbols and edges for a file before re-indexing."""
     conn.execute("DELETE FROM edges WHERE file_id = ?", (file_id,))

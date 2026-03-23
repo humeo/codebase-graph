@@ -7,12 +7,12 @@ from pathlib import Path
 import click
 
 from codebase_graph.hooks import install_hook, uninstall_hook
-from codebase_graph.indexer.engine import index_directory, index_file
+from codebase_graph.indexer.engine import build_language_contexts, index_directory, index_file
 from codebase_graph.query.context import query_context
 from codebase_graph.query.formatter import format_context_text, format_json
 from codebase_graph.query.relations import get_callees, get_callers
 from codebase_graph.query.symbols import find_symbol, list_file_symbols
-from codebase_graph.storage.db import open_db, resolve_edges
+from codebase_graph.storage.db import delete_file_by_path, open_db, resolve_edges
 
 
 def _resolve_root(root: str | Path | None) -> Path:
@@ -336,12 +336,17 @@ def update(files: tuple[str, ...], root: str | None) -> None:
     """Re-index specific files (for git hooks)."""
     root_path = _resolve_root(root)
     conn = open_db(root_path)
+    language_contexts = build_language_contexts(root_path)
 
     indexed = 0
     for relative_path in files:
         file_path = root_path / relative_path
-        if file_path.exists() and index_file(conn, file_path, root_path):
-            indexed += 1
+        if file_path.exists():
+            if index_file(conn, file_path, root_path, language_contexts=language_contexts):
+                indexed += 1
+            continue
+
+        delete_file_by_path(conn, relative_path)
 
     resolve_edges(conn)
     conn.close()
