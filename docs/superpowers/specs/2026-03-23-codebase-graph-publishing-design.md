@@ -45,11 +45,12 @@ The workflow should:
 1. Check out the repository.
 2. Install `uv` using the official Astral installer.
 3. Set up Python 3.12 to match the project requirement.
-4. Run `uv sync`.
-5. Run the full test suite.
-6. Build release artifacts with `uv build`.
-7. Create a GitHub release for the tag.
-8. Upload the built `wheel` and `sdist` artifacts to that release.
+4. Verify that the pushed tag version matches `pyproject.toml`.
+5. Run `uv sync`.
+6. Run the full test suite.
+7. Build release artifacts with `uv build`.
+8. Create a GitHub release for the tag.
+9. Upload the built `wheel` and `sdist` artifacts to that release.
 
 ### Release Assets
 
@@ -82,21 +83,29 @@ The script should:
 2. Ensure `curl` or `wget` is available.
 3. Ensure `uv` is installed.
 4. If `uv` is missing, bootstrap it using Astral's official installer.
-5. Resolve the version to install:
+5. Resolve the GitHub release to install:
    - default: latest GitHub release
    - optional: explicit version through an environment variable such as `CODEBASE_GRAPH_VERSION`
-6. Install `codebase-graph` from the release artifact or release source archive using `uv tool install`.
-7. Print a short success message including how to verify the install with `cg --version`.
+6. Select exactly one wheel asset from that release using a deterministic filename match.
+7. Download the wheel asset to a temporary local file.
+8. Install `codebase-graph` from that local wheel with `uv tool install --force`.
+9. Print a short success message including how to verify the install with `cg --version`.
 
 ### Version Resolution
 
-The installer should prefer a release-specific artifact instead of installing from `main`.
+The installer should prefer a release-specific wheel artifact instead of installing from `main`.
 
 That keeps the one-line install path tied to published releases and prevents silent drift between the documented install command and the actual code users receive.
 
+Release selection must be explicit:
+
+- If `CODEBASE_GRAPH_VERSION` is unset, query the latest GitHub release endpoint.
+- If `CODEBASE_GRAPH_VERSION` is set, normalize it to tag form and query that exact release.
+- If the release or wheel asset is missing, exit with a clear error instead of falling back to `main`.
+
 ### Update Behavior
 
-If `cg` is already installed, the script should use the uv tool upgrade path rather than leaving duplicate state behind. The exact mechanism can be implemented as reinstall-or-upgrade, but the user-facing result must be idempotent.
+If `cg` is already installed, the script should replace the existing tool installation cleanly by forcing installation from the chosen wheel. The user-facing result must be idempotent.
 
 ## Documentation Design
 
