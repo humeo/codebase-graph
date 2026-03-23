@@ -56,6 +56,9 @@ class _GoLanguageContext:
     def for_file(self, path: Path) -> object:
         return self.file_contexts[path.resolve()]
 
+    def maybe_for_file(self, path: Path) -> object | None:
+        return self.file_contexts.get(path.resolve())
+
 
 def _iter_indexable_paths(root: Path) -> list[Path]:
     paths: list[Path] = []
@@ -139,7 +142,7 @@ def index_file(
     if language == "go" and language_contexts is not None:
         project_context = language_contexts.get("go")
         if project_context is not None:
-            file_context = project_context.for_file(file_path)
+            file_context = project_context.maybe_for_file(file_path)
 
     symbols, edges = extractor.extract(tree, source, rel_path, context=file_context)
 

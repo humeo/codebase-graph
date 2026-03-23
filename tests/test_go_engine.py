@@ -121,3 +121,23 @@ def test_index_directory_ignores_skipped_go_paths_when_building_context(tmp_path
     assert stats["files_scanned"] == 0
     file_count = conn.execute("SELECT COUNT(*) AS c FROM files").fetchone()["c"]
     assert file_count == 0
+
+
+def test_index_directory_mixed_tree_allows_go_files_without_matching_context(tmp_path):
+    (tmp_path / "main.go").write_text("package main\n\nfunc main() {}\n", encoding="utf-8")
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    (app_dir / "util.go").write_text("package app\n\nfunc Run() {}\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    stats = index_directory(conn, tmp_path)
+
+    assert stats["files_scanned"] == 2
+    file_paths = {
+        row["path"] for row in conn.execute("SELECT path FROM files ORDER BY path").fetchall()
+    }
+    assert file_paths == {"app/util.go", "main.go"}
