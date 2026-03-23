@@ -40,18 +40,10 @@ The installer bootstraps `uv` automatically if it is missing. The shell script i
 
 ## Agent Skill
 
-This repository also ships a reusable `skills.sh` skill for coding agents. The skill content is agent-agnostic; only the installation target changes.
-
 Install the skill from this repository:
 
 ```bash
 npx skills add https://github.com/humeo/codebase-graph --skill codebase-graph
-```
-
-Skill files live in:
-
-```text
-skills/codebase-graph/
 ```
 
 ## See It Work
