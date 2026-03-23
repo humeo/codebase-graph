@@ -4,7 +4,6 @@ import hashlib
 import logging
 import sqlite3
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from tree_sitter import Parser
@@ -57,22 +56,6 @@ def build_language_contexts(root: Path) -> dict[str, object]:
         contexts["go"] = build_go_project_context(root)
     return contexts
 
-
-def _go_file_context_for_indexing(project_context: Any, file_path: Path) -> object:
-    file_context = project_context.for_file(file_path)
-    package_import_path = file_context.package_import_path
-    if file_context.package_name == "main":
-        package_import_path = file_context.module_path
-
-    return SimpleNamespace(
-        module_root=file_context.module_root,
-        module_path=file_context.module_path,
-        package_name=file_context.package_name,
-        package_import_path=package_import_path,
-        is_package_owner=file_context.is_package_owner,
-    )
-
-
 def index_file(
     conn: sqlite3.Connection,
     file_path: Path,
@@ -103,7 +86,7 @@ def index_file(
     if language == "go" and language_contexts is not None:
         project_context = language_contexts.get("go")
         if project_context is not None:
-            file_context = _go_file_context_for_indexing(project_context, file_path)
+            file_context = project_context.for_file(file_path)
 
     symbols, edges = extractor.extract(tree, source, rel_path, context=file_context)
 

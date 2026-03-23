@@ -72,7 +72,7 @@ def test_index_directory_inserts_unique_go_package_symbols():
     ).fetchall()
 
     assert [row["qualified_name"] for row in rows] == [
-        "example.com/app",
+        "example.com/app/cmd/api",
         "example.com/app/internal/util",
     ]
 
