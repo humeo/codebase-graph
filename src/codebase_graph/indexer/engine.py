@@ -112,6 +112,59 @@ def build_language_contexts(root: Path) -> dict[str, object]:
     return contexts
 
 
+def _go_file_context_is_stale(
+    conn: sqlite3.Connection, file_id: int, file_context: object | None
+) -> bool:
+    package_rows = conn.execute(
+        "SELECT name, qualified_name FROM symbols WHERE file_id = ? AND kind = 'package'",
+        (file_id,),
+    ).fetchall()
+    symbol_rows = conn.execute(
+        """
+        SELECT name, qualified_name, kind
+        FROM symbols
+        WHERE file_id = ?
+          AND kind IN ('function', 'type', 'method')
+        """,
+        (file_id,),
+    ).fetchall()
+
+    if file_context is None:
+        if package_rows:
+            return True
+        return any(
+            row["kind"] in {"function", "type"} and row["qualified_name"] != row["name"]
+            or row["kind"] == "method" and "/" in (row["qualified_name"] or "")
+            for row in symbol_rows
+        )
+
+    package_name = getattr(file_context, "package_name", None)
+    package_import_path = getattr(file_context, "package_import_path", None)
+    is_package_owner = getattr(file_context, "is_package_owner", False)
+
+    if is_package_owner and package_import_path:
+        if len(package_rows) != 1:
+            return True
+        package_row = package_rows[0]
+        if (
+            package_row["name"] != package_name
+            or package_row["qualified_name"] != package_import_path
+        ):
+            return True
+    elif package_rows:
+        return True
+
+    expected_prefix = f"{package_import_path}." if package_import_path else None
+    if expected_prefix is None:
+        return False
+
+    return any(
+        row["qualified_name"] is None
+        or not row["qualified_name"].startswith(expected_prefix)
+        for row in symbol_rows
+    )
+
+
 def index_file(
     conn: sqlite3.Connection,
     file_path: Path,
@@ -128,31 +181,29 @@ def index_file(
     if language_obj is None or extractor is None:
         return False
 
-    source = file_path.read_bytes()
-    content_hash = _content_hash(source)
-    has_go_project_context = (
-        language == "go"
-        and language_contexts is not None
-        and language_contexts.get("go") is not None
-    )
-
-    existing = get_file_by_path(conn, rel_path)
-    if (
-        existing is not None
-        and existing["content_hash"] == content_hash
-        and not has_go_project_context
-    ):
-        log.debug("Skipping unchanged file: %s", rel_path)
-        return False
-
-    parser = Parser(language_obj)
-    tree = parser.parse(source)
     file_context = None
     if language == "go" and language_contexts is not None:
         project_context = language_contexts.get("go")
         if project_context is not None:
             file_context = project_context.maybe_for_file(file_path)
 
+    source = file_path.read_bytes()
+    content_hash = _content_hash(source)
+
+    existing = get_file_by_path(conn, rel_path)
+    if (
+        existing is not None
+        and existing["content_hash"] == content_hash
+        and (
+            language != "go"
+            or not _go_file_context_is_stale(conn, existing["id"], file_context)
+        )
+    ):
+        log.debug("Skipping unchanged file: %s", rel_path)
+        return False
+
+    parser = Parser(language_obj)
+    tree = parser.parse(source)
     symbols, edges = extractor.extract(tree, source, rel_path, context=file_context)
 
     file_id = upsert_file(conn, rel_path, language, content_hash)

@@ -298,6 +298,24 @@ def test_index_directory_reindexes_go_files_when_module_context_changes(tmp_path
     assert [row["qualified_name"] for row in rows] == ["example.com/renamed-app"]
 
 
+def test_index_directory_skips_unchanged_go_file_when_context_is_stable(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    (app_dir / "util.go").write_text("package app\n\nfunc Run() {}\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    index_directory(conn, tmp_path)
+    stats = index_directory(conn, tmp_path)
+
+    assert stats["files_scanned"] == 1
+    assert stats["files_indexed"] == 0
+    assert stats["files_skipped"] == 1
+
+
 def test_index_directory_skips_malformed_go_files_during_context_building(tmp_path):
     app_dir = tmp_path / "app"
     app_dir.mkdir()
