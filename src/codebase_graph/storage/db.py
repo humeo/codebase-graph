@@ -42,6 +42,12 @@ def get_file_by_path(conn: sqlite3.Connection, path: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM files WHERE path = ?", (path,)).fetchone()
 
 
+def delete_file_by_path(conn: sqlite3.Connection, path: str) -> None:
+    """Delete a file record and its dependent symbols/edges by relative path."""
+    conn.execute("DELETE FROM files WHERE path = ?", (path,))
+    conn.commit()
+
+
 def delete_file_data(conn: sqlite3.Connection, file_id: int) -> None:
     """Delete all symbols and edges for a file before re-indexing."""
     conn.execute("DELETE FROM edges WHERE file_id = ?", (file_id,))
@@ -114,8 +120,22 @@ def insert_edge(
 
 
 def resolve_edges(conn: sqlite3.Connection) -> int:
-    """Resolve unresolved edges by matching target_name to known symbols."""
-    cursor = conn.execute(
+    """Resolve unresolved edges by preferring qualified names, then names."""
+    qualified_cursor = conn.execute(
+        """UPDATE edges
+           SET target_id = (
+               SELECT s.id
+               FROM symbols s
+               WHERE s.qualified_name = edges.target_name
+           )
+           WHERE target_id IS NULL
+             AND (
+                 SELECT COUNT(*)
+                 FROM symbols s
+                 WHERE s.qualified_name = edges.target_name
+             ) = 1"""
+    )
+    name_cursor = conn.execute(
         """UPDATE edges
            SET target_id = (
                SELECT s.id
@@ -130,4 +150,4 @@ def resolve_edges(conn: sqlite3.Connection) -> int:
              ) = 1"""
     )
     conn.commit()
-    return cursor.rowcount
+    return qualified_cursor.rowcount + name_cursor.rowcount

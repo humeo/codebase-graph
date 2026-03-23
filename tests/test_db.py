@@ -149,6 +149,50 @@ def test_resolve_edges(db):
     assert row["target_id"] == tgt_id
 
 
+def test_resolve_edges_prefers_unique_qualified_name_before_name(db):
+    file_id = upsert_file(db, "src/main.py", "python", "abc123")
+    other_file_id = upsert_file(db, "src/lib.py", "python", "def456")
+    src_id = insert_symbol(
+        db, "caller", "main.caller", "function", file_id, 1, 5, "def caller()"
+    )
+    tgt_id = insert_symbol(
+        db,
+        name="different_name",
+        qualified_name="pkg.target",
+        kind="function",
+        file_id=file_id,
+        line_start=10,
+        line_end=20,
+        signature="def target()",
+    )
+    insert_symbol(
+        db,
+        name="pkg.target",
+        qualified_name="other.target",
+        kind="function",
+        file_id=other_file_id,
+        line_start=1,
+        line_end=2,
+        signature="def other()",
+    )
+    insert_edge(
+        db,
+        source_id=src_id,
+        target_name="pkg.target",
+        relation="calls",
+        file_id=file_id,
+        line=3,
+    )
+
+    resolved = resolve_edges(db)
+
+    assert resolved == 1
+    row = db.execute(
+        "SELECT target_id FROM edges WHERE source_id = ?", (src_id,)
+    ).fetchone()
+    assert row["target_id"] == tgt_id
+
+
 def test_resolve_edges_leaves_ambiguous_duplicate_names_unresolved(db):
     file_id = upsert_file(db, "src/main.py", "python", "abc123")
     other_file_id = upsert_file(db, "src/lib.py", "python", "def456")

@@ -33,7 +33,10 @@ class Extractor(Protocol):
     """Protocol for language-specific extractors."""
 
     def extract(
-        self, tree: Tree, source: bytes, file_path: str
+        self,
+        tree: Tree,
+        source: bytes,
+        file_path: str,
+        context: object | None = None,
     ) -> tuple[list[SymbolInfo], list[EdgeInfo]]:
         """Extract symbols and edges from a parsed tree."""
-

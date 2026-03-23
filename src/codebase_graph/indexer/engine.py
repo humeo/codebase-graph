@@ -3,10 +3,13 @@
 import hashlib
 import logging
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from tree_sitter import Parser
 
+from codebase_graph.indexer.go.project import build_go_project_context
 from codebase_graph.indexer.languages import (
     get_language_and_extractor,
     get_language_name,
@@ -46,7 +49,129 @@ def _content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
+@dataclass(frozen=True)
+class _GoLanguageContext:
+    file_contexts: dict[Path, object]
+
+    def for_file(self, path: Path) -> object:
+        return self.file_contexts[path.resolve()]
+
+    def maybe_for_file(self, path: Path) -> object | None:
+        return self.file_contexts.get(path.resolve())
+
+
+def _iter_indexable_paths(root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        relative_parts = path.relative_to(root).parts
+        if any(part in SKIP_DIRS for part in relative_parts):
+            continue
+        if not path.is_file():
+            continue
+        if path.suffix not in supported_suffixes():
+            continue
+        paths.append(path)
+    return paths
+
+
+def _nearest_go_module_root(path: Path, root: Path) -> Path | None:
+    for parent in (path.parent, *path.parents):
+        if parent == root.parent:
+            break
+        if (parent / "go.mod").is_file():
+            return parent
+        if parent == root:
+            break
+    return None
+
+
+def build_language_contexts(root: Path) -> dict[str, object]:
+    """Build shared language-specific indexing context for a directory."""
+    contexts: dict[str, object] = {}
+    go_file_contexts: dict[Path, object] = {}
+    module_roots = {
+        module_root
+        for path in _iter_indexable_paths(root)
+        if path.suffix == ".go"
+        for module_root in [_nearest_go_module_root(path.resolve(), root)]
+        if module_root is not None
+    }
+    for module_root in sorted(module_roots):
+        project_context = build_go_project_context(module_root)
+        for path in _iter_indexable_paths(module_root):
+            if path.suffix != ".go":
+                continue
+            resolved = path.resolve()
+            try:
+                go_file_contexts[resolved] = project_context.for_file(resolved)
+            except KeyError:
+                continue
+
+    if go_file_contexts:
+        contexts["go"] = _GoLanguageContext(go_file_contexts)
+    return contexts
+
+
+def _go_file_context_is_stale(
+    conn: sqlite3.Connection, file_id: int, file_context: object | None
+) -> bool:
+    package_rows = conn.execute(
+        "SELECT name, qualified_name FROM symbols WHERE file_id = ? AND kind = 'package'",
+        (file_id,),
+    ).fetchall()
+    symbol_rows = conn.execute(
+        """
+        SELECT name, qualified_name, kind
+        FROM symbols
+        WHERE file_id = ?
+          AND kind IN ('function', 'type', 'method')
+        """,
+        (file_id,),
+    ).fetchall()
+
+    if file_context is None:
+        if package_rows:
+            return True
+        return any(
+            row["kind"] in {"function", "type"} and row["qualified_name"] != row["name"]
+            or row["kind"] == "method"
+            and (row["qualified_name"] or "").count(".") != 1
+            for row in symbol_rows
+        )
+
+    package_name = getattr(file_context, "package_name", None)
+    package_import_path = getattr(file_context, "package_import_path", None)
+    is_package_owner = getattr(file_context, "is_package_owner", False)
+
+    if is_package_owner and package_import_path:
+        if len(package_rows) != 1:
+            return True
+        package_row = package_rows[0]
+        if (
+            package_row["name"] != package_name
+            or package_row["qualified_name"] != package_import_path
+        ):
+            return True
+    elif package_rows:
+        return True
+
+    expected_prefix = f"{package_import_path}." if package_import_path else None
+    if expected_prefix is None:
+        return False
+
+    return any(
+        row["qualified_name"] is None
+        or not row["qualified_name"].startswith(expected_prefix)
+        for row in symbol_rows
+    )
+
+
+def index_file(
+    conn: sqlite3.Connection,
+    file_path: Path,
+    root: Path,
+    language_contexts: dict[str, Any] | None = None,
+) -> bool:
     """Index a single file and return whether it was reindexed."""
     rel_path = str(file_path.relative_to(root))
     language = get_language_name(file_path.suffix)
@@ -57,17 +182,30 @@ def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
     if language_obj is None or extractor is None:
         return False
 
+    file_context = None
+    if language == "go" and language_contexts is not None:
+        project_context = language_contexts.get("go")
+        if project_context is not None:
+            file_context = project_context.maybe_for_file(file_path)
+
     source = file_path.read_bytes()
     content_hash = _content_hash(source)
 
     existing = get_file_by_path(conn, rel_path)
-    if existing is not None and existing["content_hash"] == content_hash:
+    if (
+        existing is not None
+        and existing["content_hash"] == content_hash
+        and (
+            language != "go"
+            or not _go_file_context_is_stale(conn, existing["id"], file_context)
+        )
+    ):
         log.debug("Skipping unchanged file: %s", rel_path)
         return False
 
     parser = Parser(language_obj)
     tree = parser.parse(source)
-    symbols, edges = extractor.extract(tree, source, rel_path)
+    symbols, edges = extractor.extract(tree, source, rel_path, context=file_context)
 
     file_id = upsert_file(conn, rel_path, language, content_hash)
     delete_file_data(conn, file_id)
@@ -87,6 +225,25 @@ def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
     )
     symbol_id_map["__module__"] = module_symbol_id
     symbol_id_map[rel_path] = module_symbol_id
+
+    if (
+        file_context is not None
+        and file_context.is_package_owner
+        and file_context.package_import_path
+    ):
+        package_symbol_id = insert_symbol(
+            conn,
+            name=file_context.package_name,
+            qualified_name=file_context.package_import_path,
+            kind="package",
+            file_id=file_id,
+            line_start=1,
+            line_end=line_count,
+            signature=None,
+            exported=False,
+        )
+        symbol_id_map[file_context.package_import_path] = package_symbol_id
+        symbol_id_map[file_context.package_name] = package_symbol_id
 
     for symbol in symbols:
         symbol_id = insert_symbol(
@@ -125,21 +282,14 @@ def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
 def index_directory(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
     """Index all supported files below root and resolve cross-file edges."""
     root = root.resolve()
+    language_contexts = build_language_contexts(root)
     stats = {"files_scanned": 0, "files_indexed": 0, "files_skipped": 0}
     seen_paths: set[str] = set()
 
-    for path in sorted(root.rglob("*")):
-        relative_parts = path.relative_to(root).parts
-        if any(part in SKIP_DIRS for part in relative_parts):
-            continue
-        if not path.is_file():
-            continue
-        if path.suffix not in supported_suffixes():
-            continue
-
+    for path in _iter_indexable_paths(root):
         seen_paths.add(str(path.relative_to(root)))
         stats["files_scanned"] += 1
-        if index_file(conn, path, root):
+        if index_file(conn, path, root, language_contexts=language_contexts):
             stats["files_indexed"] += 1
         else:
             stats["files_skipped"] += 1
