@@ -4,9 +4,12 @@ import hashlib
 import logging
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 from tree_sitter import Parser
 
+from codebase_graph.indexer.go.project import build_go_project_context
 from codebase_graph.indexer.languages import (
     get_language_and_extractor,
     get_language_name,
@@ -46,7 +49,36 @@ def _content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
+def build_language_contexts(root: Path) -> dict[str, object]:
+    """Build shared language-specific indexing context for a directory."""
+    contexts: dict[str, object] = {}
+    go_files = next(root.rglob("*.go"), None)
+    if go_files is not None:
+        contexts["go"] = build_go_project_context(root)
+    return contexts
+
+
+def _go_file_context_for_indexing(project_context: Any, file_path: Path) -> object:
+    file_context = project_context.for_file(file_path)
+    package_import_path = file_context.package_import_path
+    if file_context.package_name == "main":
+        package_import_path = file_context.module_path
+
+    return SimpleNamespace(
+        module_root=file_context.module_root,
+        module_path=file_context.module_path,
+        package_name=file_context.package_name,
+        package_import_path=package_import_path,
+        is_package_owner=file_context.is_package_owner,
+    )
+
+
+def index_file(
+    conn: sqlite3.Connection,
+    file_path: Path,
+    root: Path,
+    language_contexts: dict[str, Any] | None = None,
+) -> bool:
     """Index a single file and return whether it was reindexed."""
     rel_path = str(file_path.relative_to(root))
     language = get_language_name(file_path.suffix)
@@ -67,7 +99,13 @@ def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
 
     parser = Parser(language_obj)
     tree = parser.parse(source)
-    symbols, edges = extractor.extract(tree, source, rel_path)
+    file_context = None
+    if language == "go" and language_contexts is not None:
+        project_context = language_contexts.get("go")
+        if project_context is not None:
+            file_context = _go_file_context_for_indexing(project_context, file_path)
+
+    symbols, edges = extractor.extract(tree, source, rel_path, context=file_context)
 
     file_id = upsert_file(conn, rel_path, language, content_hash)
     delete_file_data(conn, file_id)
@@ -87,6 +125,25 @@ def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
     )
     symbol_id_map["__module__"] = module_symbol_id
     symbol_id_map[rel_path] = module_symbol_id
+
+    if (
+        file_context is not None
+        and file_context.is_package_owner
+        and file_context.package_import_path
+    ):
+        package_symbol_id = insert_symbol(
+            conn,
+            name=file_context.package_name,
+            qualified_name=file_context.package_import_path,
+            kind="package",
+            file_id=file_id,
+            line_start=1,
+            line_end=line_count,
+            signature=None,
+            exported=False,
+        )
+        symbol_id_map[file_context.package_import_path] = package_symbol_id
+        symbol_id_map[file_context.package_name] = package_symbol_id
 
     for symbol in symbols:
         symbol_id = insert_symbol(
@@ -125,6 +182,7 @@ def index_file(conn: sqlite3.Connection, file_path: Path, root: Path) -> bool:
 def index_directory(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
     """Index all supported files below root and resolve cross-file edges."""
     root = root.resolve()
+    language_contexts = build_language_contexts(root)
     stats = {"files_scanned": 0, "files_indexed": 0, "files_skipped": 0}
     seen_paths: set[str] = set()
 
@@ -139,7 +197,7 @@ def index_directory(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
 
         seen_paths.add(str(path.relative_to(root)))
         stats["files_scanned"] += 1
-        if index_file(conn, path, root):
+        if index_file(conn, path, root, language_contexts=language_contexts):
             stats["files_indexed"] += 1
         else:
             stats["files_skipped"] += 1

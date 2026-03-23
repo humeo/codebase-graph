@@ -1,10 +1,16 @@
 """Go symbol extractor using tree-sitter."""
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from tree_sitter import Node, Tree
 
 from codebase_graph.indexer.extractors.base import EdgeInfo, SymbolInfo
+
+
+class _GoPackageContext(Protocol):
+    package_name: str | None
+    package_import_path: str | None
 
 
 @dataclass
@@ -267,7 +273,7 @@ class GoExtractor:
         text = self._source[node.start_byte : node.end_byte].decode("utf-8").strip()
         return text or None
 
-    def _normalize_context(self, context: object | None) -> _GoContext:
+    def _normalize_context(self, context: _GoPackageContext | object | None) -> _GoContext:
         if context is None:
             return _GoContext()
 
