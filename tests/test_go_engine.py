@@ -198,6 +198,27 @@ def test_go_selector_calls_resolve_to_unique_function():
     )
 
 
+def test_index_directory_resolves_grouped_go_imports_and_selector_calls():
+    conn = _indexed_go_db(FIXTURES / "multi_module")
+
+    resolved = {
+        (row["relation"], row["target_qualified_name"])
+        for row in conn.execute(
+            """
+            SELECT e.relation, s.qualified_name AS target_qualified_name
+            FROM edges e
+            JOIN symbols s ON s.id = e.target_id
+            ORDER BY e.relation, s.qualified_name
+            """
+        ).fetchall()
+    }
+
+    assert ("imports", "example.com/app/internal/util") in resolved
+    assert ("imports", "example.com/lib/pkg/math") in resolved
+    assert ("calls", "example.com/app/internal/util.Parse") in resolved
+    assert ("calls", "example.com/lib/pkg/math.Add") in resolved
+
+
 def test_index_directory_indexes_standalone_go_file_without_project_context(tmp_path):
     source_file = tmp_path / "main.go"
     source_file.write_text("package main\n\nfunc main() {}\n", encoding="utf-8")

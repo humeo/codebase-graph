@@ -52,3 +52,21 @@ def test_extracts_go_import_edges_and_alias_selector_calls():
 
     assert ("imports", "example.com/basic/internal/util") in imports
     assert ("calls", "example.com/basic/internal/util.Parse") in calls
+
+
+def test_extracts_grouped_go_import_edges_and_alias_selector_calls():
+    _, edges = _parse(
+        FIXTURES / "multi_module" / "app" / "cmd" / "api" / "main.go",
+        context=SimpleNamespace(
+            package_name="main",
+            package_import_path="example.com/app/cmd/api",
+        ),
+    )
+
+    imports = {(edge.relation, edge.target_name) for edge in edges if edge.relation == "imports"}
+    calls = {(edge.relation, edge.target_name) for edge in edges if edge.relation == "calls"}
+
+    assert ("imports", "example.com/app/internal/util") in imports
+    assert ("imports", "example.com/lib/pkg/math") in imports
+    assert ("calls", "example.com/app/internal/util.Parse") in calls
+    assert ("calls", "example.com/lib/pkg/math.Add") in calls

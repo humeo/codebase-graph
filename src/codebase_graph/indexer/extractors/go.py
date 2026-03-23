@@ -66,9 +66,7 @@ class GoExtractor:
     def _extract_import(self, node: Node) -> None:
         scope = self._package_scope()
         line = node.start_point[0] + 1
-        for child in node.children:
-            if child.type != "import_spec":
-                continue
+        for child in self._iter_import_specs(node):
 
             import_path = self._import_path(child)
             if import_path is None:
@@ -84,6 +82,15 @@ class GoExtractor:
                     line=line,
                 )
             )
+
+    def _iter_import_specs(self, node: Node) -> list[Node]:
+        specs: list[Node] = []
+        for child in node.children:
+            if child.type == "import_spec":
+                specs.append(child)
+            elif child.type == "import_spec_list":
+                specs.extend(self._iter_import_specs(child))
+        return specs
 
     def _extract_type_declaration(self, node: Node) -> None:
         for child in node.children:
