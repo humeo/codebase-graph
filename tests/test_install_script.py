@@ -94,6 +94,7 @@ def test_install_script_uses_latest_release_when_version_unset(tmp_path):
 
     assert result.returncode == 0
     assert "releases/latest" in calls
+    assert "https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl" in calls
     assert "uv:tool install --force" in calls
 
 
@@ -116,6 +117,16 @@ def test_install_script_fails_without_matching_wheel(tmp_path):
 
     assert result.returncode == 1
     assert "No wheel asset found" in result.stderr
+
+
+def test_install_script_fails_with_duplicate_matching_wheels(tmp_path):
+    result, _calls = _run_install(
+        tmp_path,
+        release_json='{"assets":[{"name":"codebase_graph-0.1.0-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl"},{"name":"codebase_graph-0.1.0+mirror-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0+mirror-py3-none-any.whl"}]}',
+    )
+
+    assert result.returncode == 1
+    assert "Expected exactly one wheel asset" in result.stderr
 
 
 def test_install_script_fails_on_unsupported_platform(tmp_path):

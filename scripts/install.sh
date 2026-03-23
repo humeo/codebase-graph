@@ -74,8 +74,19 @@ release_url() {
   esac
 }
 
-select_wheel_url() {
-  awk -F'"' '/browser_download_url/ && /codebase_graph-.*-py3-none-any\.whl/ { print $4; exit }'
+select_wheel_urls() {
+  tr '{},' '\n' | awk -F'"' '
+    $2 == "name" {
+      asset_name = $4
+      next
+    }
+    $2 == "browser_download_url" {
+      if (asset_name ~ /^codebase_graph-.*-py3-none-any\.whl$/) {
+        print $4
+      }
+      asset_name = ""
+    }
+  '
 }
 
 main() {
@@ -86,14 +97,21 @@ main() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "${tmpdir:-}"' EXIT
 
-  local release_json wheel_url wheel_path
+  local release_json wheel_matches wheel_url wheel_path match_count
   release_json="$(download "$(release_url)")"
-  wheel_url="$(printf '%s' "$release_json" | select_wheel_url)"
+  wheel_matches="$(printf '%s' "$release_json" | select_wheel_urls)"
+  match_count="$(printf '%s\n' "$wheel_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
 
-  if [ -z "$wheel_url" ]; then
+  if [ "$match_count" -eq 0 ]; then
     echo "No wheel asset found in GitHub release metadata." >&2
     exit 1
   fi
+  if [ "$match_count" -ne 1 ]; then
+    echo "Expected exactly one wheel asset in GitHub release metadata." >&2
+    exit 1
+  fi
+
+  wheel_url="$wheel_matches"
 
   wheel_path="$tmpdir/codebase-graph.whl"
   download_to_file "$wheel_url" "$wheel_path"
