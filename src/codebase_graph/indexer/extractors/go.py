@@ -261,7 +261,7 @@ class GoExtractor:
         return f"{self._package_prefix}.{name}"
 
     def _package_scope(self) -> str:
-        return self._package_prefix or "__package__"
+        return "__module__"
 
     def _signature(self, node: Node) -> str | None:
         text = self._source[node.start_byte : node.end_byte].decode("utf-8").strip()

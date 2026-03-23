@@ -9,7 +9,7 @@ class PythonExtractor:
     """Extract symbols and edges from Python source files."""
 
     def extract(
-        self, tree: Tree, source: bytes, file_path: str
+        self, tree: Tree, source: bytes, file_path: str, context: object | None = None
     ) -> tuple[list[SymbolInfo], list[EdgeInfo]]:
         self._symbols: list[SymbolInfo] = []
         self._edges: list[EdgeInfo] = []

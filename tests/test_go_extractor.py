@@ -33,6 +33,10 @@ def test_extracts_go_functions_methods_and_types():
     assert ("method", "example.com/basic/internal/util.Service.Run") in qualified
     assert ("type", "example.com/basic/internal/util.Service") in qualified
 
+    kinds = {symbol.name: symbol.kind for symbol in symbols}
+    assert kinds["Alias"] == "type"
+    assert kinds["Reader"] == "type"
+
 
 def test_extracts_go_import_edges_and_alias_selector_calls():
     _, edges = _parse(
