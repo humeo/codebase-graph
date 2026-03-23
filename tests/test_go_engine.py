@@ -85,3 +85,39 @@ def test_index_directory_inserts_package_symbol_for_test_only_go_package():
     ).fetchall()
 
     assert [row["qualified_name"] for row in rows] == ["example.com/test-only/pkg"]
+
+
+def test_index_directory_indexes_standalone_go_file_without_project_context(tmp_path):
+    source_file = tmp_path / "main.go"
+    source_file.write_text("package main\n\nfunc main() {}\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    stats = index_directory(conn, tmp_path)
+
+    assert stats["files_scanned"] == 1
+    symbols = conn.execute(
+        "SELECT kind, qualified_name FROM symbols ORDER BY id"
+    ).fetchall()
+    assert [(row["kind"], row["qualified_name"]) for row in symbols] == [
+        ("module", "main.go"),
+        ("function", "main"),
+    ]
+
+
+def test_index_directory_ignores_skipped_go_paths_when_building_context(tmp_path):
+    skipped_file = tmp_path / "node_modules" / "x" / "main.go"
+    skipped_file.parent.mkdir(parents=True)
+    skipped_file.write_text("package main\n\nfunc main() {}\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    stats = index_directory(conn, tmp_path)
+
+    assert stats["files_scanned"] == 0
+    file_count = conn.execute("SELECT COUNT(*) AS c FROM files").fetchone()["c"]
+    assert file_count == 0

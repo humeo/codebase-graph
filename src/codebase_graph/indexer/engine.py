@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -48,13 +49,65 @@ def _content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+@dataclass(frozen=True)
+class _GoLanguageContext:
+    file_contexts: dict[Path, object]
+
+    def for_file(self, path: Path) -> object:
+        return self.file_contexts[path.resolve()]
+
+
+def _iter_indexable_paths(root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        relative_parts = path.relative_to(root).parts
+        if any(part in SKIP_DIRS for part in relative_parts):
+            continue
+        if not path.is_file():
+            continue
+        if path.suffix not in supported_suffixes():
+            continue
+        paths.append(path)
+    return paths
+
+
+def _nearest_go_module_root(path: Path, root: Path) -> Path | None:
+    for parent in (path.parent, *path.parents):
+        if parent == root.parent:
+            break
+        if (parent / "go.mod").is_file():
+            return parent
+        if parent == root:
+            break
+    return None
+
+
 def build_language_contexts(root: Path) -> dict[str, object]:
     """Build shared language-specific indexing context for a directory."""
     contexts: dict[str, object] = {}
-    go_files = next(root.rglob("*.go"), None)
-    if go_files is not None:
-        contexts["go"] = build_go_project_context(root)
+    go_file_contexts: dict[Path, object] = {}
+    module_roots = {
+        module_root
+        for path in _iter_indexable_paths(root)
+        if path.suffix == ".go"
+        for module_root in [_nearest_go_module_root(path.resolve(), root)]
+        if module_root is not None
+    }
+    for module_root in sorted(module_roots):
+        project_context = build_go_project_context(module_root)
+        for path in _iter_indexable_paths(module_root):
+            if path.suffix != ".go":
+                continue
+            resolved = path.resolve()
+            try:
+                go_file_contexts[resolved] = project_context.for_file(resolved)
+            except KeyError:
+                continue
+
+    if go_file_contexts:
+        contexts["go"] = _GoLanguageContext(go_file_contexts)
     return contexts
+
 
 def index_file(
     conn: sqlite3.Connection,
@@ -169,15 +222,7 @@ def index_directory(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
     stats = {"files_scanned": 0, "files_indexed": 0, "files_skipped": 0}
     seen_paths: set[str] = set()
 
-    for path in sorted(root.rglob("*")):
-        relative_parts = path.relative_to(root).parts
-        if any(part in SKIP_DIRS for part in relative_parts):
-            continue
-        if not path.is_file():
-            continue
-        if path.suffix not in supported_suffixes():
-            continue
-
+    for path in _iter_indexable_paths(root):
         seen_paths.add(str(path.relative_to(root)))
         stats["files_scanned"] += 1
         if index_file(conn, path, root, language_contexts=language_contexts):
