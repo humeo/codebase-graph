@@ -108,7 +108,9 @@ Required responsibilities:
 - for each `.go` file, determine the nearest ancestor module root
 - compute package import path as `module_path + relative_directory_from_module_root`
 - group files by package import path
-- choose a stable owner file per package, such as the lexicographically smallest non-test file path
+- choose a stable owner file per package using:
+  - the lexicographically smallest non-test file path when one exists
+  - otherwise the lexicographically smallest file path in the package, including `*_test.go`
 - expose package metadata for a file:
   - module root
   - module path
@@ -118,7 +120,7 @@ Required responsibilities:
 
 Optional enhancement:
 
-- if the local `go` command is available, use it to validate or refine computed package metadata
+- if the local `go` command is available, use it to validate static module or package metadata and fill gaps only when static discovery cannot determine a package identity
 - if that command fails, log the failure at debug level and continue with static results
 
 ## Symbol Model
@@ -221,13 +223,14 @@ Expected results:
 The indexing flow for Go files becomes:
 
 1. `index_directory()` scans the repository and builds `GoProjectContext`
-2. for each `.go` file, the engine retrieves file-specific package metadata
-3. the file is parsed with tree-sitter Go
-4. `GoExtractor.extract(..., context=...)` returns symbols and edges
-5. the engine inserts the file record and module symbol as it does today
-6. if the file is the package owner, the engine inserts the synthetic package symbol
-7. the engine inserts file-local symbols and unresolved edges
-8. `resolve_edges()` performs qualified-name-first resolution, then name fallback
+2. `update()` must also build a `GoProjectContext` for the repository root before reindexing specific Go files, so hook-driven incremental indexing uses the same package resolution rules as full indexing
+3. for each `.go` file, the engine retrieves file-specific package metadata
+4. the file is parsed with tree-sitter Go
+5. `GoExtractor.extract(..., context=...)` returns symbols and edges
+6. the engine inserts the file record and module symbol as it does today
+7. if the file is the package owner, the engine inserts the synthetic package symbol
+8. the engine inserts file-local symbols and unresolved edges
+9. `resolve_edges()` performs qualified-name-first resolution, then name fallback
 
 ## Monorepo and Multi-Module Rules
 
@@ -243,7 +246,8 @@ Rules:
 
 If static analysis and toolchain metadata disagree:
 
-- prefer toolchain metadata when it can be retrieved successfully
+- prefer static analysis for deterministic indexing
+- only use toolchain metadata when static analysis is missing enough information to build a package identity, or when validating a computed identity
 - otherwise keep the static result and continue indexing
 
 ## Error Handling
@@ -290,10 +294,13 @@ Add `tests/test_go_engine.py` covering:
 - `.go` suffix support
 - indexing Go files into the existing schema
 - synthetic package symbol insertion
+- synthetic package symbol insertion for test-only packages
 - repository-local import edge resolution to package symbols
 - imported selector call resolution when the target symbol is unique
 - incremental indexing behavior for Go files
 - deleted Go file cleanup
+
+Add a CLI-level acceptance test for `cg update` in a multi-package or multi-module Go fixture so the hook-driven incremental path is explicitly covered.
 
 ## Implementation Order
 
