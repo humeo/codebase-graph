@@ -48,12 +48,12 @@ ensure_uv() {
   if need_cmd uv; then
     return
   fi
-  if ! need_cmd curl; then
-    echo "uv is missing and curl is required to bootstrap it." >&2
+  if ! need_cmd curl && ! need_cmd wget; then
+    echo "uv is missing and either curl or wget is required to bootstrap it." >&2
     exit 1
   fi
 
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+  download "https://astral.sh/uv/install.sh" | sh
   export PATH="$HOME/.local/bin:$PATH"
 
   if ! need_cmd uv; then
@@ -75,18 +75,18 @@ release_url() {
 }
 
 select_wheel_urls() {
-  tr '{},' '\n' | awk -F'"' '
-    $2 == "name" {
-      asset_name = $4
-      next
-    }
-    $2 == "browser_download_url" {
-      if (asset_name ~ /^codebase_graph-.*-py3-none-any\.whl$/) {
-        print $4
-      }
-      asset_name = ""
-    }
-  '
+  tr '\n' ' ' | sed 's/},[[:space:]]*{/}\n{/g' | while IFS= read -r asset || [ -n "$asset" ]; do
+    name="$(printf '%s' "$asset" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')"
+    url="$(printf '%s' "$asset" | sed -n 's/.*"browser_download_url":"\([^"]*\)".*/\1/p')"
+
+    case "$name" in
+      codebase_graph-*-py3-none-any.whl)
+        if [ -n "$url" ]; then
+          printf '%s\n' "$url"
+        fi
+        ;;
+    esac
+  done
 }
 
 main() {
