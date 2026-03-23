@@ -13,10 +13,12 @@ def main(argv: list[str]) -> int:
         return 2
 
     tag = argv[1]
-    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    repo_root = Path(__file__).resolve().parent.parent
+    pyproject = repo_root / "pyproject.toml"
+    package_init = repo_root / "src" / "codebase_graph" / "__init__.py"
 
     try:
-        verify_release_tag(tag, pyproject)
+        verify_release_tag(tag, pyproject, package_init)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
