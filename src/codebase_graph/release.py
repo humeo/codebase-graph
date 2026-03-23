@@ -15,7 +15,7 @@ def project_version_from_pyproject(pyproject_path: Path) -> str:
 
 def verify_release_tag(tag: str, pyproject_path: Path) -> None:
     normalized = normalize_release_tag(tag)
-    expected = f"v{project_version_from_pyproject(pyproject_path)}"
+    expected = normalize_release_tag(project_version_from_pyproject(pyproject_path))
     if normalized != expected:
         raise ValueError(
             f"Release tag {normalized!r} does not match pyproject version {expected!r}."
