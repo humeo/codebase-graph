@@ -41,7 +41,7 @@ Pushing the version tag triggers the GitHub Actions release workflow, which veri
 
 - Watch the release workflow in GitHub Actions until it completes successfully.
 - Confirm the GitHub Release contains the built wheel and source distribution assets.
-- Verify the public install command works against the published release:
+- Verify the public install path still works as intended: the installer script is fetched from `main`, then installs from the published release wheel assets for the resolved version.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/humeo/codebase-graph/main/scripts/install.sh | bash

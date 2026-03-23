@@ -36,7 +36,7 @@ cg --version
 cg --help
 ```
 
-The installer bootstraps `uv` automatically if it is missing. Installs come from versioned GitHub release wheels, not from the moving `main` branch.
+The installer bootstraps `uv` automatically if it is missing. The shell script itself is fetched from the `main` branch, but the package that gets installed comes from a versioned GitHub release wheel rather than from the source tree on `main`.
 
 ## See It Work
 
@@ -135,7 +135,7 @@ Supported source files:
 
 ## Release Model
 
-Published installs are built from GitHub Release artifacts attached to version tags such as `v0.1.0`. The public install script resolves either the latest release or an explicitly requested version and installs the matching wheel with `uv tool install --force`.
+Published installs are built from GitHub Release artifacts attached to version tags such as `v0.1.0`. The public install command fetches `scripts/install.sh` from `main`, and that script resolves either the latest release or an explicitly requested version before installing the matching release wheel with `uv tool install --force`.
 
 Maintainer release steps live in `docs/releasing.md`.
 
@@ -160,11 +160,7 @@ Requirements:
 - Python 3.12+
 - `uv`
 
-Current verification baseline on `main`:
-
-```text
-80 passed
-```
+Current verification baseline on `main`: the full test suite passes with `uv run pytest -v --tb=short`.
 
 The repository also includes agent-facing skill docs in:
 
