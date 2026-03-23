@@ -298,6 +298,40 @@ def test_index_directory_reindexes_go_files_when_module_context_changes(tmp_path
     assert [row["qualified_name"] for row in rows] == ["example.com/renamed-app"]
 
 
+def test_index_directory_reindexes_non_owner_method_file_when_context_is_removed(tmp_path):
+    (tmp_path / "go.mod").write_text("module app\n", encoding="utf-8")
+    (tmp_path / "a.go").write_text(
+        "package app\n\ntype Service struct{}\n\nfunc (s Service) Run() {}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.go").write_text(
+        "package app\n\nfunc (s Service) Stop() {}\n",
+        encoding="utf-8",
+    )
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    index_directory(conn, tmp_path)
+    (tmp_path / "go.mod").unlink()
+
+    index_directory(conn, tmp_path)
+
+    rows = conn.execute(
+        """
+        SELECT kind, qualified_name
+        FROM symbols
+        WHERE file_id = (SELECT id FROM files WHERE path = 'b.go')
+        ORDER BY kind, qualified_name
+        """
+    ).fetchall()
+    assert [(row["kind"], row["qualified_name"]) for row in rows] == [
+        ("method", "Service.Stop"),
+        ("module", "b.go"),
+    ]
+
+
 def test_index_directory_skips_unchanged_go_file_when_context_is_stable(tmp_path):
     app_dir = tmp_path / "app"
     app_dir.mkdir()

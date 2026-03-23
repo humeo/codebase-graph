@@ -134,7 +134,8 @@ def _go_file_context_is_stale(
             return True
         return any(
             row["kind"] in {"function", "type"} and row["qualified_name"] != row["name"]
-            or row["kind"] == "method" and "/" in (row["qualified_name"] or "")
+            or row["kind"] == "method"
+            and (row["qualified_name"] or "").count(".") != 1
             for row in symbol_rows
         )
 
