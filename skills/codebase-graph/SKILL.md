@@ -1,14 +1,10 @@
 ---
 name: codebase-graph
 description: >
-  Navigate codebases using a tree-sitter powered symbol graph. Returns compressed,
-  high-density context -- symbol identity, caller/callee relationships, and the most
-  relevant files -- instead of noisy grep results. Use this skill whenever you need to
-  understand code structure, trace dependencies, find callers/callees, or get focused
-  context for modifying a symbol. This is better than grep/ls for any code navigation
-  task: understanding a function before changing it, impact analysis, tracing call chains,
-  or figuring out which files to read next. Even if the user just says "look at this
-  function" or "what calls X", use this skill.
+  Use when navigating unfamiliar code, tracing callers or callees, or gathering
+  focused symbol context before editing code. Prefer this over grep/ls when you
+  need code structure, dependency flow, or the smallest relevant set of files to
+  read next.
 ---
 
 # Codebase Graph -- Code Navigation for Agents

@@ -38,6 +38,12 @@ cg --help
 
 The installer bootstraps `uv` automatically if it is missing. The shell script itself is fetched from the `main` branch, but the package that gets installed comes from a versioned GitHub release wheel rather than from the source tree on `main`.
 
+Install the agent skill for Codex with `skills.sh`:
+
+```bash
+npx skills add https://github.com/humeo/codebase-graph --skill codebase-graph -a codex
+```
+
 ## See It Work
 
 Index the current repository:
@@ -165,7 +171,7 @@ Current verification baseline on `main`: the full test suite passes with `uv run
 The repository also includes agent-facing skill docs in:
 
 ```text
-skill/codebase-graph/
+skills/codebase-graph/
 ```
 
 <details>
