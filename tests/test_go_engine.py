@@ -164,3 +164,44 @@ def test_index_directory_ignores_skipped_go_files_inside_module_context(tmp_path
         row["path"] for row in conn.execute("SELECT path FROM files ORDER BY path").fetchall()
     }
     assert file_paths == {"app/util.go"}
+
+
+def test_index_directory_reindexes_go_files_when_module_context_changes(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    (app_dir / "util.go").write_text("package app\n\nfunc Run() {}\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    index_directory(conn, tmp_path)
+    (app_dir / "go.mod").write_text("module example.com/renamed-app\n", encoding="utf-8")
+
+    index_directory(conn, tmp_path)
+
+    rows = conn.execute(
+        "SELECT kind, qualified_name FROM symbols WHERE kind = 'package' ORDER BY qualified_name"
+    ).fetchall()
+    assert [row["qualified_name"] for row in rows] == ["example.com/renamed-app"]
+
+
+def test_index_directory_skips_malformed_go_files_during_context_building(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    (app_dir / "util.go").write_text("package app\n\nfunc Run() {}\n", encoding="utf-8")
+    (app_dir / "bad.go").write_text("this is not valid go\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    stats = index_directory(conn, tmp_path)
+
+    assert stats["files_scanned"] == 2
+    package_rows = conn.execute(
+        "SELECT qualified_name FROM symbols WHERE kind = 'package' ORDER BY qualified_name"
+    ).fetchall()
+    assert [row["qualified_name"] for row in package_rows] == ["example.com/app"]

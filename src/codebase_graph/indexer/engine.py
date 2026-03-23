@@ -130,9 +130,18 @@ def index_file(
 
     source = file_path.read_bytes()
     content_hash = _content_hash(source)
+    has_go_project_context = (
+        language == "go"
+        and language_contexts is not None
+        and language_contexts.get("go") is not None
+    )
 
     existing = get_file_by_path(conn, rel_path)
-    if existing is not None and existing["content_hash"] == content_hash:
+    if (
+        existing is not None
+        and existing["content_hash"] == content_hash
+        and not has_go_project_context
+    ):
         log.debug("Skipping unchanged file: %s", rel_path)
         return False
 

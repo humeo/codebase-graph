@@ -62,7 +62,10 @@ def build_go_project_context(root: Path) -> GoProjectContext:
     for file_path in _iter_project_paths(root, "*.go"):
         resolved = file_path.resolve()
         module = _select_module(resolved, modules)
-        package_name = _parse_package_name(resolved)
+        try:
+            package_name = _parse_package_name(resolved)
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
         package_dir = resolved.parent
         file_details[resolved] = (module, package_name, package_dir)
         package_files.setdefault((package_dir, package_name), []).append(resolved)
