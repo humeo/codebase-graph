@@ -114,8 +114,22 @@ def insert_edge(
 
 
 def resolve_edges(conn: sqlite3.Connection) -> int:
-    """Resolve unresolved edges by matching target_name to known symbols."""
-    cursor = conn.execute(
+    """Resolve unresolved edges by preferring qualified names, then names."""
+    qualified_cursor = conn.execute(
+        """UPDATE edges
+           SET target_id = (
+               SELECT s.id
+               FROM symbols s
+               WHERE s.qualified_name = edges.target_name
+           )
+           WHERE target_id IS NULL
+             AND (
+                 SELECT COUNT(*)
+                 FROM symbols s
+                 WHERE s.qualified_name = edges.target_name
+             ) = 1"""
+    )
+    name_cursor = conn.execute(
         """UPDATE edges
            SET target_id = (
                SELECT s.id
@@ -130,4 +144,4 @@ def resolve_edges(conn: sqlite3.Connection) -> int:
              ) = 1"""
     )
     conn.commit()
-    return cursor.rowcount
+    return qualified_cursor.rowcount + name_cursor.rowcount

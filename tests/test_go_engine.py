@@ -5,6 +5,7 @@ from pathlib import Path
 
 from codebase_graph.indexer.engine import index_directory, index_file
 from codebase_graph.indexer.languages import supported_suffixes
+from codebase_graph.storage.db import insert_edge, resolve_edges
 from codebase_graph.storage.schema import create_tables
 
 FIXTURES = Path(__file__).parent / "fixtures" / "go"
@@ -16,6 +17,22 @@ def _indexed_go_db(root: Path) -> sqlite3.Connection:
     create_tables(conn)
     index_directory(conn, root)
     return conn
+
+
+def _symbol_id(conn: sqlite3.Connection, **conditions: str) -> int:
+    clauses = [f"{column} = ?" for column in conditions]
+    row = conn.execute(
+        f"SELECT id FROM symbols WHERE {' AND '.join(clauses)}",
+        tuple(conditions.values()),
+    ).fetchone()
+    assert row is not None
+    return row["id"]
+
+
+def _file_id(conn: sqlite3.Connection, path: str) -> int:
+    row = conn.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()
+    assert row is not None
+    return row["id"]
 
 
 def test_go_suffix_is_supported():
@@ -85,6 +102,100 @@ def test_index_directory_inserts_package_symbol_for_test_only_go_package():
     ).fetchall()
 
     assert [row["qualified_name"] for row in rows] == ["example.com/test-only/pkg"]
+
+
+def test_go_import_edges_resolve_to_package_symbols():
+    conn = _indexed_go_db(FIXTURES / "multi_module" / "app")
+
+    source_id = _symbol_id(
+        conn, kind="module", qualified_name="cmd/api/main.go"
+    )
+    insert_edge(
+        conn,
+        source_id=source_id,
+        target_name="example.com/app/internal/util",
+        relation="imports",
+        file_id=_file_id(conn, "cmd/api/main.go"),
+        line=3,
+    )
+
+    resolve_edges(conn)
+
+    rows = conn.execute(
+        """
+        SELECT e.relation, s.kind AS target_kind
+        FROM edges e
+        JOIN symbols s ON s.id = e.target_id
+        WHERE e.relation = 'imports'
+        """
+    ).fetchall()
+
+    assert any(row["target_kind"] == "package" for row in rows)
+
+
+def test_go_cross_module_import_edges_resolve_to_package_symbols():
+    conn = _indexed_go_db(FIXTURES / "multi_module")
+
+    source_id = _symbol_id(
+        conn, kind="module", qualified_name="app/cmd/api/main.go"
+    )
+    insert_edge(
+        conn,
+        source_id=source_id,
+        target_name="example.com/lib/pkg/math",
+        relation="imports",
+        file_id=_file_id(conn, "app/cmd/api/main.go"),
+        line=3,
+    )
+
+    resolve_edges(conn)
+
+    rows = conn.execute(
+        """
+        SELECT e.relation, s.qualified_name AS target_qualified_name
+        FROM edges e
+        JOIN symbols s ON s.id = e.target_id
+        WHERE e.relation = 'imports'
+        """
+    ).fetchall()
+
+    assert any(
+        row["target_qualified_name"] == "example.com/lib/pkg/math" for row in rows
+    )
+
+
+def test_go_selector_calls_resolve_to_unique_function():
+    conn = _indexed_go_db(FIXTURES / "multi_module" / "app")
+
+    source_id = _symbol_id(
+        conn,
+        kind="function",
+        qualified_name="example.com/app/cmd/api.main",
+    )
+    insert_edge(
+        conn,
+        source_id=source_id,
+        target_name="example.com/app/internal/util.Parse",
+        relation="calls",
+        file_id=_file_id(conn, "cmd/api/main.go"),
+        line=8,
+    )
+
+    resolve_edges(conn)
+
+    rows = conn.execute(
+        """
+        SELECT e.relation, s.qualified_name AS target_qualified_name
+        FROM edges e
+        JOIN symbols s ON s.id = e.target_id
+        WHERE e.relation = 'calls'
+        """
+    ).fetchall()
+
+    assert any(
+        row["target_qualified_name"] == "example.com/app/internal/util.Parse"
+        for row in rows
+    )
 
 
 def test_index_directory_indexes_standalone_go_file_without_project_context(tmp_path):
