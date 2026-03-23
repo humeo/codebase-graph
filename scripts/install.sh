@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="${CODEBASE_GRAPH_REPO:-humeo/codebase-graph}"
 VERSION="${CODEBASE_GRAPH_VERSION:-}"
-API_BASE="https://api.github.com/repos/${REPO}/releases"
+RELEASES_BASE="https://github.com/${REPO}/releases"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -62,31 +62,63 @@ ensure_uv() {
   fi
 }
 
-release_url() {
-  if [ -z "$VERSION" ]; then
-    printf '%s/latest' "$API_BASE"
-    return
-  fi
-
-  case "$VERSION" in
-    v*) printf '%s/tags/%s' "$API_BASE" "$VERSION" ;;
-    *) printf '%s/tags/v%s' "$API_BASE" "$VERSION" ;;
+normalize_tag() {
+  case "$1" in
+    v*) printf '%s' "$1" ;;
+    *) printf 'v%s' "$1" ;;
   esac
 }
 
-select_wheel_urls() {
-  tr '\n' ' ' | sed 's/},[[:space:]]*{/}\n{/g' | while IFS= read -r asset || [ -n "$asset" ]; do
-    name="$(printf '%s' "$asset" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')"
-    url="$(printf '%s' "$asset" | sed -n 's/.*"browser_download_url":"\([^"]*\)".*/\1/p')"
+version_from_tag() {
+  case "$1" in
+    v*) printf '%s' "${1#v}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
 
-    case "$name" in
-      codebase_graph-*-py3-none-any.whl)
-        if [ -n "$url" ]; then
-          printf '%s\n' "$url"
-        fi
-        ;;
-    esac
-  done
+latest_release_page_url() {
+  printf '%s/latest' "$RELEASES_BASE"
+}
+
+latest_release_tag() {
+  local page tag
+  page="$(download "$(latest_release_page_url)")"
+  tag="$(
+    printf '%s' "$page" | tr '\n' ' ' | sed -n \
+      's/.*property="og:url"[^>]*content="[^"]*\/releases\/tag\/\([^"]*\)".*/\1/p'
+  )"
+
+  if [ -z "$tag" ]; then
+    tag="$(
+      printf '%s' "$page" | tr '\n' ' ' | sed -n \
+        's/.*<title>[[:space:]]*Release[[:space:]]\([^[:space:]<][^·<]*\)[[:space:]]·.*/\1/p'
+    )"
+  fi
+
+  if [ -z "$tag" ]; then
+    echo "Could not resolve latest release tag from GitHub." >&2
+    exit 1
+  fi
+
+  printf '%s' "$tag"
+}
+
+resolved_release_tag() {
+  if [ -n "$VERSION" ]; then
+    normalize_tag "$VERSION"
+    return
+  fi
+
+  latest_release_tag
+}
+
+wheel_filename() {
+  printf 'codebase_graph-%s-py3-none-any.whl' "$(version_from_tag "$1")"
+}
+
+wheel_url() {
+  local tag="$1"
+  printf '%s/download/%s/%s' "$RELEASES_BASE" "$tag" "$(wheel_filename "$tag")"
 }
 
 main() {
@@ -97,24 +129,11 @@ main() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "${tmpdir:-}"' EXIT
 
-  local release_json wheel_matches wheel_url wheel_path match_count
-  release_json="$(download "$(release_url)")"
-  wheel_matches="$(printf '%s' "$release_json" | select_wheel_urls)"
-  match_count="$(printf '%s\n' "$wheel_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
-
-  if [ "$match_count" -eq 0 ]; then
-    echo "No wheel asset found in GitHub release metadata." >&2
-    exit 1
-  fi
-  if [ "$match_count" -ne 1 ]; then
-    echo "Expected exactly one wheel asset in GitHub release metadata." >&2
-    exit 1
-  fi
-
-  wheel_url="$wheel_matches"
-
-  wheel_path="$tmpdir/codebase-graph.whl"
-  download_to_file "$wheel_url" "$wheel_path"
+  local tag asset_url wheel_path
+  tag="$(resolved_release_tag)"
+  asset_url="$(wheel_url "$tag")"
+  wheel_path="$tmpdir/$(wheel_filename "$tag")"
+  download_to_file "$asset_url" "$wheel_path"
   uv tool install --force "$wheel_path"
   echo "codebase-graph installed. Run 'cg --version' to verify."
 }

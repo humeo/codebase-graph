@@ -9,6 +9,16 @@ import textwrap
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "install.sh"
+LATEST_RELEASE_PAGE = textwrap.dedent(
+    """\
+    <html>
+      <head>
+        <meta property="og:url" content="/humeo/codebase-graph/releases/tag/v0.1.0" />
+        <title>Release v0.1.0 · humeo/codebase-graph · GitHub</title>
+      </head>
+    </html>
+    """
+)
 
 
 def _write_fake_bin(bin_dir: Path, name: str, body: str) -> None:
@@ -27,7 +37,7 @@ def _link_system_bin(bin_dir: Path, name: str) -> None:
 def _run_install(
     tmp_path,
     *,
-    release_json: str,
+    release_page_html: str = LATEST_RELEASE_PAGE,
     version: str | None = None,
     with_curl: bool = True,
     with_wget: bool = False,
@@ -50,9 +60,13 @@ def _run_install(
                 echo "curl:$*" >> "{log_path}"
                 case "$*" in
                   *api.github.com*)
-                    printf '%s' '{release_json}'
+                    echo "unexpected api call" >&2
+                    exit 22
                     ;;
-                  *example.test*|*releases/download*)
+                  *github.com*releases/latest*|*github.com*releases/tag/*)
+                    printf '%s' '{release_page_html}'
+                    ;;
+                  *releases/download*)
                     out=""
                     while [ "$#" -gt 0 ]; do
                       if [ "$1" = "-o" ]; then
@@ -81,9 +95,13 @@ def _run_install(
                 echo "wget:$*" >> "{log_path}"
                 case "$*" in
                   *api.github.com*)
-                    printf '%s' '{release_json}'
+                    echo "unexpected api call" >&2
+                    exit 1
                     ;;
-                  *example.test*|*releases/download*)
+                  *github.com*releases/latest*|*github.com*releases/tag/*)
+                    printf '%s' '{release_page_html}'
+                    ;;
+                  *releases/download*)
                     if [ "$1" = "-qO" ]; then
                       printf 'wheel' > "$2"
                     fi
@@ -135,54 +153,82 @@ printf 'Linux\\n'
 def test_install_script_uses_latest_release_when_version_unset(tmp_path):
     result, calls = _run_install(
         tmp_path,
-        release_json='{"assets":[{"name":"codebase_graph-0.1.0-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl"}]}',
     )
 
     assert result.returncode == 0
-    assert "releases/latest" in calls
-    assert "https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl" in calls
+    assert "github.com/humeo/codebase-graph/releases/latest" in calls
+    assert "api.github.com" not in calls
+    assert (
+        "https://github.com/humeo/codebase-graph/releases/download/v0.1.0/"
+        "codebase_graph-0.1.0-py3-none-any.whl"
+    ) in calls
     assert "uv:tool install --force" in calls
+
+
+def test_install_script_preserves_wheel_filename_for_uv(tmp_path):
+    result, calls = _run_install(tmp_path)
+
+    assert result.returncode == 0
+    uv_call = next(line for line in calls.splitlines() if line.startswith("uv:tool install --force "))
+    assert uv_call.endswith("/codebase_graph-0.1.0-py3-none-any.whl")
 
 
 def test_install_script_normalizes_explicit_version(tmp_path):
     result, calls = _run_install(
         tmp_path,
-        release_json='{"assets":[{"name":"codebase_graph-0.1.0-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl"}]}',
         version="0.1.0",
     )
 
     assert result.returncode == 0
-    assert "releases/tags/v0.1.0" in calls
+    assert "releases/latest" not in calls
+    assert (
+        "https://github.com/humeo/codebase-graph/releases/download/v0.1.0/"
+        "codebase_graph-0.1.0-py3-none-any.whl"
+    ) in calls
 
 
-def test_install_script_handles_reversed_asset_field_order(tmp_path):
+def test_install_script_accepts_prefixed_explicit_version(tmp_path):
     result, calls = _run_install(
         tmp_path,
-        release_json='{"assets":[{"browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl","name":"codebase_graph-0.1.0-py3-none-any.whl"}]}',
+        version="v0.1.0",
     )
 
     assert result.returncode == 0
-    assert "https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl" in calls
+    assert (
+        "https://github.com/humeo/codebase-graph/releases/download/v0.1.0/"
+        "codebase_graph-0.1.0-py3-none-any.whl"
+    ) in calls
 
 
-def test_install_script_fails_without_matching_wheel(tmp_path):
+def test_install_script_uses_title_fallback_when_og_url_is_missing(tmp_path):
+    result, calls = _run_install(
+        tmp_path,
+        release_page_html=textwrap.dedent(
+            """\
+            <html>
+              <head>
+                <title>Release v0.2.0 · humeo/codebase-graph · GitHub</title>
+              </head>
+            </html>
+            """
+        ),
+    )
+
+    assert result.returncode == 0
+    assert (
+        "https://github.com/humeo/codebase-graph/releases/download/v0.2.0/"
+        "codebase_graph-0.2.0-py3-none-any.whl"
+    ) in calls
+
+
+def test_install_script_fails_when_latest_release_tag_cannot_be_resolved(tmp_path):
     result, _calls = _run_install(
         tmp_path,
-        release_json='{"assets":[{"name":"codebase_graph-0.1.0.tar.gz","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0.tar.gz"}]}',
+        release_page_html="<html><head><title>Releases</title></head></html>",
     )
 
     assert result.returncode == 1
-    assert "No wheel asset found" in result.stderr
-
-
-def test_install_script_fails_with_duplicate_matching_wheels(tmp_path):
-    result, _calls = _run_install(
-        tmp_path,
-        release_json='{"assets":[{"name":"codebase_graph-0.1.0-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl"},{"name":"codebase_graph-0.1.0+mirror-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0+mirror-py3-none-any.whl"}]}',
-    )
-
-    assert result.returncode == 1
-    assert "Expected exactly one wheel asset" in result.stderr
+    assert "Could not resolve latest release tag from GitHub." in result.stderr
 
 
 def test_install_script_fails_on_unsupported_platform(tmp_path):
@@ -209,7 +255,6 @@ def test_install_script_fails_on_unsupported_platform(tmp_path):
 def test_install_script_bootstraps_uv_with_wget_only(tmp_path):
     result, calls = _run_install(
         tmp_path,
-        release_json='{"assets":[{"name":"codebase_graph-0.1.0-py3-none-any.whl","browser_download_url":"https://example.test/v0.1.0/codebase_graph-0.1.0-py3-none-any.whl"}]}',
         with_curl=False,
         with_wget=True,
         with_uv=False,
