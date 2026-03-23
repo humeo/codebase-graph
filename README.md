@@ -38,10 +38,26 @@ cg --help
 
 The installer bootstraps `uv` automatically if it is missing. The shell script itself is fetched from the `main` branch, but the package that gets installed comes from a versioned GitHub release wheel rather than from the source tree on `main`.
 
-Install the agent skill for Codex with `skills.sh`:
+## Agent Skill
+
+This repository also ships a reusable `skills.sh` skill for coding agents. The skill content is agent-agnostic; only the installation target changes.
+
+Install the skill from this repository:
+
+```bash
+npx skills add https://github.com/humeo/codebase-graph --skill codebase-graph
+```
+
+Target a specific agent when needed. For example, Codex:
 
 ```bash
 npx skills add https://github.com/humeo/codebase-graph --skill codebase-graph -a codex
+```
+
+Skill files live in:
+
+```text
+skills/codebase-graph/
 ```
 
 ## See It Work
@@ -167,12 +183,6 @@ Requirements:
 - `uv`
 
 Current verification baseline on `main`: the full test suite passes with `uv run pytest -v --tb=short`.
-
-The repository also includes agent-facing skill docs in:
-
-```text
-skills/codebase-graph/
-```
 
 <details>
 <summary>How it works</summary>
