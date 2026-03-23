@@ -5,3 +5,6 @@ __pycache__/
 *.egg-info/
 dist/
 .codebase-graph/
+.pytest_cache/
+.merge-backups/
+.nvimlog
